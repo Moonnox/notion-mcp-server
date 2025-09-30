@@ -1,0 +1,40 @@
+# Debug Dockerfile to verify build outputs
+FROM node:20-slim AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --ignore-scripts
+COPY . .
+RUN npm run build
+
+# List what was built
+RUN echo "=== Build output ===" && \
+    ls -la bin/ && \
+    echo "=== Testing remote-server.mjs ===" && \
+    file bin/remote-server.mjs
+
+# Runtime
+FROM node:20-slim
+WORKDIR /app
+
+# Copy files
+COPY --from=builder /app/bin ./bin
+COPY --from=builder /app/scripts/notion-openapi.json ./scripts/
+COPY --from=builder /app/package*.json ./
+
+RUN npm ci --ignore-scripts --omit-dev
+
+# Verify files are there
+RUN echo "=== Files in runtime ===" && \
+    ls -la bin/ && \
+    echo "=== Can execute? ===" && \
+    test -x bin/remote-server.mjs && echo "Yes, executable" || echo "No, not executable"
+
+ENV NOTION_API_VERSION="2022-06-28"
+ENV PORT=3000
+ENV NODE_ENV=production
+
+EXPOSE 3000
+
+CMD ["bin/remote-server.mjs"]
+
