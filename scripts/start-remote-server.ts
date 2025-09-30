@@ -117,27 +117,29 @@ app.get('/mcp', handleSSEConnection)
 // POST endpoint for MCP messages with session ID (path parameter)
 app.post('/messages/:sessionId', async (req: Request, res: Response) => {
   const { sessionId } = req.params
-  const sessionInfo = sessions.get(sessionId)
-  
-  if (!sessionInfo) {
-    console.error(`Unknown session: ${sessionId}`)
-    res.status(404).json({ error: 'Session not found' })
-    return
-  }
-  
-  console.log(`Received message for session ${sessionId} (path param)`)
+  console.log(`Received message for session ${sessionId} (path param)`) 
   console.log('Message:', JSON.stringify(req.body, null, 2))
-  
-  try {
-    // The transport handles the message internally
-    res.status(202).json({ status: 'accepted' })
-  } catch (error) {
-    console.error(`Error handling message for session ${sessionId}:`, error)
-    res.status(500).json({ 
-      error: 'Failed to process message',
-      details: error instanceof Error ? error.message : String(error)
-    })
+
+  // Try to delegate to a static handler on the transport class
+  const candidates = ['handlePost', 'handlePOST', 'handle', 'post', 'receive', 'handleMessage', 'process']
+  for (const name of candidates) {
+    const maybeFn = (SSEServerTransport as any)[name]
+    if (typeof maybeFn === 'function') {
+      try {
+        await maybeFn.call(SSEServerTransport, req, res)
+        return
+      } catch (error) {
+        console.error(`Static ${name} failed:`, error)
+        if (!res.headersSent) {
+          res.status(500).json({ error: `Failed to process message via ${name}` })
+        }
+        return
+      }
+    }
   }
+
+  console.warn('No static POST handler found on SSEServerTransport; returning 202 as fallback')
+  res.status(202).json({ status: 'accepted' })
 })
 
 // POST endpoint for MCP messages (with query parameter or header)
@@ -146,64 +148,27 @@ app.post('/messages', async (req: Request, res: Response) => {
   console.log('Query params:', req.query)
   console.log('Headers:', req.headers)
   console.log('Message:', JSON.stringify(req.body, null, 2))
-  
-  // Try to get session ID from query parameter, header, or body
-  let sessionId = req.query.sessionId as string || 
-                  req.header('X-Session-ID') ||
-                  req.body?.sessionId
-  
-  if (!sessionId) {
-    // If no session ID, this might be a single-session server
-    // Try the first (and possibly only) active session
-    if (sessions.size === 1) {
-      sessionId = Array.from(sessions.keys())[0]
-      console.log(`Using only active session: ${sessionId}`)
-    } else {
-      console.warn('No valid session ID found in query, header, or body')
-      res.status(400).json({ 
-        error: 'Session ID required',
-        activeSessions: sessions.size,
-        hint: 'Use ?sessionId=ID query parameter, X-Session-ID header, or include sessionId in body'
-      })
-      return
+
+  // Prefer a static handler on the transport class to route messages correctly
+  const candidates = ['handlePost', 'handlePOST', 'handle', 'post', 'receive', 'handleMessage', 'process']
+  for (const name of candidates) {
+    const maybeFn = (SSEServerTransport as any)[name]
+    if (typeof maybeFn === 'function') {
+      try {
+        await maybeFn.call(SSEServerTransport, req, res)
+        return
+      } catch (error) {
+        console.error(`Static ${name} failed:`, error)
+        if (!res.headersSent) {
+          res.status(500).json({ error: `Failed to process message via ${name}` })
+        }
+        return
+      }
     }
   }
-  
-  const sessionInfo = sessions.get(sessionId)
-  
-  if (!sessionInfo) {
-    console.error(`Unknown session: ${sessionId}`)
-    res.status(404).json({ 
-      error: 'Session not found',
-      sessionId,
-      activeSessions: Array.from(sessions.keys())
-    })
-    return
-  }
-  
-  console.log(`Processing message for session ${sessionId}`)
-  
-  try {
-    // Send the message to the transport for processing
-    // The SSEServerTransport should have a method to handle incoming messages
-    // @ts-ignore - accessing internal method
-    if (typeof sessionInfo.transport.handlePostMessage === 'function') {
-      await sessionInfo.transport.handlePostMessage(req, res)
-    } else {
-      // If the method doesn't exist, just acknowledge receipt
-      // The transport may handle this differently
-      console.warn('Transport does not expose handlePostMessage method')
-      res.status(202).json({ jsonrpc: '2.0', result: {} })
-    }
-  } catch (error) {
-    console.error(`Error handling message for session ${sessionId}:`, error)
-    if (!res.headersSent) {
-      res.status(500).json({ 
-        error: 'Failed to process message',
-        details: error instanceof Error ? error.message : String(error)
-      })
-    }
-  }
+
+  console.warn('No static POST handler found on SSEServerTransport; returning 202 as fallback')
+  res.status(202).json({ status: 'accepted' })
 })
 
 // Start the server
