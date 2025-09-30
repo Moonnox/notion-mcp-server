@@ -1,9 +1,9 @@
 import express, { Request, Response } from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'url'
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
-import type { Server as MCPServer } from '@modelcontextprotocol/sdk/server/index.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { initProxyWithConfig } from '../src/init-server.js'
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 
 const filename = fileURLToPath(import.meta.url)
 const directory = path.dirname(filename)
@@ -12,19 +12,19 @@ const specPath = path.resolve(directory, '../scripts/notion-openapi.json')
 const app = express()
 const port = process.env.PORT || 3000
 
-// Store active transport sessions by session ID
-interface SessionInfo {
-  transport: SSEServerTransport
-  server: MCPServer
-  notionApiKey: string
+interface MCPSession {
+  id: string
+  response: Response
+  sendMessage: (message: JSONRPCMessage) => void
 }
-const sessions = new Map<string, SessionInfo>()
+
+const sessions = new Map<string, MCPSession>()
 
 // Enable CORS for remote connections
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.header('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID')
+  res.header('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') {
     res.sendStatus(200)
   } else {
@@ -59,11 +59,31 @@ async function handleSSEConnection(req: Request, res: Response) {
     return
   }
 
-  // Generate session ID
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`
   console.log(`Creating session ${sessionId}`)
 
   try {
+    // Set up SSE
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Session-ID': sessionId
+    })
+
+    // Send initial comment to establish connection
+    res.write(': mcp-session-start\n\n')
+
+    // Function to send messages via SSE
+    const sendMessage = (message: JSONRPCMessage) => {
+      console.log(`Sending SSE message for session ${sessionId}:`, JSON.stringify(message))
+      res.write(`data: ${JSON.stringify(message)}\n\n`)
+    }
+
+    // Store session
+    const session: MCPSession = { id: sessionId, response: res, sendMessage }
+    sessions.set(sessionId, session)
+
     console.log('Initializing MCP proxy with config:', {
       baseUrl,
       notionApiVersion,
@@ -78,25 +98,29 @@ async function handleSSEConnection(req: Request, res: Response) {
       notionApiVersion
     })
 
-    console.log(`Creating SSE transport for session ${sessionId}`)
-    // Create transport with /messages endpoint - the SDK will handle routing internally
-    const transport = new SSEServerTransport('/messages', res)
+    // Create a custom transport that bridges our SSE implementation with the MCP server
+    // We'll use stdio transport but override its message sending
+    const transport = new StdioServerTransport()
     
-    // Connect and store transport + server for this session
-    console.log(`Connecting proxy to transport for session ${sessionId}`)
+    // Override the send method to use SSE instead of stdio
+    const originalSend = transport.send.bind(transport)
+    transport.send = async (message: JSONRPCMessage) => {
+      sendMessage(message)
+    }
+
+    console.log(`Connecting proxy to custom transport for session ${sessionId}`)
     await proxy.connect(transport)
-    sessions.set(sessionId, { transport, server: proxy.getServer(), notionApiKey })
     
-    // Send session ID as a custom header for the client to use
-    res.setHeader('X-Session-ID', sessionId)
+    // Store the transport for receiving messages
+    ;(session as any).transport = transport
     
-    // Clean up session when connection closes
+    console.log(`MCP connection established successfully for session ${sessionId}`)
+
+    // Clean up when connection closes
     res.on('close', () => {
       console.log(`Session ${sessionId} closed`)
       sessions.delete(sessionId)
     })
-    
-    console.log(`MCP connection established successfully for session ${sessionId}`)
   } catch (error) {
     console.error(`Error establishing MCP connection for session ${sessionId}:`, error)
     sessions.delete(sessionId)
@@ -115,61 +139,73 @@ app.get('/sse', handleSSEConnection)
 // Alias endpoint for compatibility
 app.get('/mcp', handleSSEConnection)
 
-// POST endpoint for MCP messages with session ID (path parameter)
-app.post('/messages/:sessionId', async (req: Request, res: Response) => {
-  const { sessionId } = req.params
-  console.log(`Received message for session ${sessionId} (path param)`) 
-  console.log('Message:', JSON.stringify(req.body, null, 2))
-
-  // Try to delegate to a static handler on the transport class
-  const candidates = ['handlePost', 'handlePOST', 'handle', 'post', 'receive', 'handleMessage', 'process']
-  for (const name of candidates) {
-    const maybeFn = (SSEServerTransport as any)[name]
-    if (typeof maybeFn === 'function') {
-      try {
-        await maybeFn.call(SSEServerTransport, req, res)
-        return
-      } catch (error) {
-        console.error(`Static ${name} failed:`, error)
-        if (!res.headersSent) {
-          res.status(500).json({ error: `Failed to process message via ${name}` })
-        }
-        return
-      }
-    }
-  }
-
-  console.warn('No static POST handler found on SSEServerTransport; returning 202 as fallback')
-  res.status(202).json({ status: 'accepted' })
-})
-
-// POST endpoint for MCP messages (with query parameter or header)
+// POST endpoint for MCP messages
 app.post('/messages', async (req: Request, res: Response) => {
   console.log('Received POST to /messages')
   console.log('Query params:', req.query)
-  console.log('Headers:', req.headers)
-  console.log('Message:', JSON.stringify(req.body, null, 2))
+  console.log('Body:', JSON.stringify(req.body, null, 2))
 
-  // Prefer a static handler on the transport class to route messages correctly
-  const candidates = ['handlePost', 'handlePOST', 'handle', 'post', 'receive', 'handleMessage', 'process']
-  for (const name of candidates) {
-    const maybeFn = (SSEServerTransport as any)[name]
-    if (typeof maybeFn === 'function') {
-      try {
-        await maybeFn.call(SSEServerTransport, req, res)
-        return
-      } catch (error) {
-        console.error(`Static ${name} failed:`, error)
-        if (!res.headersSent) {
-          res.status(500).json({ error: `Failed to process message via ${name}` })
-        }
-        return
-      }
-    }
+  // Get session ID from query parameter or use the only active session
+  let sessionId = req.query.sessionId as string
+
+  if (!sessionId && sessions.size === 1) {
+    sessionId = Array.from(sessions.keys())[0]
+    console.log(`Using only active session: ${sessionId}`)
   }
 
-  console.warn('No static POST handler found on SSEServerTransport; returning 202 as fallback')
-  res.status(202).json({ status: 'accepted' })
+  if (!sessionId) {
+    console.error('No session ID provided and multiple/no sessions active')
+    res.status(400).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Session ID required'
+      },
+      id: req.body.id || null
+    })
+    return
+  }
+
+  const session = sessions.get(sessionId)
+  if (!session) {
+    console.error(`Unknown session: ${sessionId}`)
+    res.status(404).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Session not found'
+      },
+      id: req.body.id || null
+    })
+    return
+  }
+
+  try {
+    const transport = (session as any).transport as StdioServerTransport
+    
+    // Send the message to the transport for processing
+    // We need to simulate receiving it via stdin
+    if (transport && typeof (transport as any).handleMessage === 'function') {
+      console.log(`Forwarding message to transport for session ${sessionId}`)
+      await (transport as any).handleMessage(req.body)
+    } else {
+      console.error('Transport does not have handleMessage method')
+      // The response will be sent via SSE, just acknowledge receipt via HTTP
+    }
+    
+    // Acknowledge receipt (actual response goes via SSE)
+    res.status(202).end()
+  } catch (error) {
+    console.error(`Error processing message for session ${sessionId}:`, error)
+    res.status(500).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: error instanceof Error ? error.message : 'Internal error'
+      },
+      id: req.body.id || null
+    })
+  }
 })
 
 // Start the server
