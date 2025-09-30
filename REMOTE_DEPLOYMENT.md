@@ -160,13 +160,17 @@ spec:
 
 #### Google Cloud Run Example
 
+The repository includes a `cloudbuild.yaml` configuration for automated builds in Google Cloud Build.
+
+**Option 1: Using Cloud Build (Recommended)**
+
 ```bash
-# Build and push image
-gcloud builds submit --tag gcr.io/YOUR_PROJECT/notion-mcp-server
+# Submit build to Cloud Build
+gcloud builds submit --config cloudbuild.yaml
 
 # Deploy to Cloud Run
 gcloud run deploy notion-mcp-server \
-  --image gcr.io/YOUR_PROJECT/notion-mcp-server \
+  --image gcr.io/YOUR_PROJECT_ID/notion-mcp-server:latest \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
@@ -174,7 +178,41 @@ gcloud run deploy notion-mcp-server \
   --memory 512Mi \
   --cpu 1 \
   --min-instances 1 \
-  --max-instances 10
+  --max-instances 10 \
+  --set-env-vars=NODE_ENV=production,PORT=3000 \
+  --command=node \
+  --args=build/scripts/start-remote-server.js \
+  --timeout=60
+```
+
+**Option 2: Direct build and deploy**
+
+```bash
+# Build and push image
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/notion-mcp-server
+
+# Deploy to Cloud Run
+gcloud run deploy notion-mcp-server \
+  --image gcr.io/YOUR_PROJECT_ID/notion-mcp-server \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 3000 \
+  --memory 512Mi \
+  --cpu 1 \
+  --min-instances 1 \
+  --max-instances 10 \
+  --set-env-vars=NODE_ENV=production,PORT=3000 \
+  --command=node \
+  --args=build/scripts/start-remote-server.js \
+  --timeout=60
+```
+
+**Note**: The standard `Dockerfile` is compatible with Google Cloud Build. If you need BuildKit features for faster local builds, use `Dockerfile.buildkit` instead:
+
+```bash
+# Local BuildKit build
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.buildkit -t notion-mcp-server .
 ```
 
 #### AWS ECS Example

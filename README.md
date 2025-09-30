@@ -106,7 +106,14 @@ This approach:
 You can also build and run the Docker image locally. First, build the Docker image:
 
 ```bash
+# Standard build (compatible with all Docker versions)
+docker build -t notion-mcp-server .
+
+# Or use Docker Compose
 docker-compose build
+
+# Optional: BuildKit-optimized build (faster, requires Docker 18.09+)
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.buildkit -t notion-mcp-server .
 ```
 
 Then, add the following to your `.cursor/mcp.json` or `claude_desktop_config.json`:
