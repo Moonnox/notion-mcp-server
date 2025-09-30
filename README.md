@@ -6,6 +6,26 @@ This project implements an [MCP server](https://spec.modelcontextprotocol.io/) f
 
 ![mcp-demo](https://github.com/user-attachments/assets/e3ff90a7-7801-48a9-b807-f7dd47f0d3d6)
 
+## MCP Compliance
+
+This server is fully compliant with the Model Context Protocol (MCP) specification:
+
+- **MCP SDK**: Built on `@modelcontextprotocol/sdk` version 1.8.0
+- **Transport Support**: 
+  - Stdio transport for local execution
+  - SSE (Server-Sent Events) transport for remote connections
+- **Protocol Features**:
+  - Tool listing and discovery
+  - Tool execution with structured input/output
+  - Error handling and status reporting
+  - Multiple concurrent connections (remote mode)
+- **Configuration**:
+  - Environment variables (stdio mode)
+  - Query parameters (remote mode)
+  - Per-connection configuration support
+
+For remote deployment information, see [REMOTE_DEPLOYMENT.md](./REMOTE_DEPLOYMENT.md).
+
 ### Installation
 
 #### 1. Setting up Integration in Notion:
@@ -48,9 +68,9 @@ Add the following to your `.cursor/mcp.json` or `claude_desktop_config.json` (Ma
 
 ##### Using Docker:
 
-There are two options for running the MCP server with Docker:
+There are three options for running the MCP server with Docker:
 
-###### Option 1: Using the official Docker Hub image:
+###### Option 1: Using the official Docker Hub image (stdio mode):
 
 Add the following to your `.cursor/mcp.json` or `claude_desktop_config.json`:
 
@@ -81,7 +101,7 @@ This approach:
 - Uses simple environment variables for configuration
 - Provides a more reliable configuration method
 
-###### Option 2: Building the Docker image locally:
+###### Option 2: Building the Docker image locally (stdio mode):
 
 You can also build and run the Docker image locally. First, build the Docker image:
 
@@ -109,6 +129,55 @@ Then, add the following to your `.cursor/mcp.json` or `claude_desktop_config.jso
 }
 ```
 
+###### Option 3: Remote MCP Server (HTTP/SSE mode):
+
+For remote connections, you can run the server in HTTP mode with SSE transport. This allows multiple clients to connect and pass configuration via query parameters.
+
+First, start the remote server:
+
+```bash
+docker-compose up notion-mcp-server-remote
+```
+
+Or run directly with Docker:
+
+```bash
+docker run -p 3000:3000 notion-mcp-server node build/scripts/start-remote-server.js
+```
+
+The server will start on port 3000 (configurable via PORT environment variable).
+
+Then, configure your MCP client to connect remotely:
+
+```javascript
+{
+  "mcpServers": {
+    "notionApi": {
+      "url": "http://localhost:3000/sse",
+      "queryParams": {
+        "notionApiKey": "ntn_****",
+        "baseUrl": "https://api.notion.com",
+        "notionApiVersion": "2022-06-28"
+      }
+    }
+  }
+}
+```
+
+**Query Parameters:**
+- `notionApiKey` (required): Your Notion integration API key
+- `baseUrl` (optional): Notion API base URL (default: https://api.notion.com)
+- `notionApiVersion` (optional): Notion API version (default: 2022-06-28)
+
+**Benefits of Remote Mode:**
+- Multiple clients can connect simultaneously
+- Configuration per connection (each client can use different API keys)
+- No need to restart server for different configurations
+- Suitable for cloud deployments
+- Health check endpoint at `/health`
+
+**Security Note:** When running in remote mode, ensure proper network security measures are in place, especially if exposing the server to the internet. Consider using HTTPS, authentication middleware, and firewall rules.
+
 Don't forget to replace `ntn_****` with your integration secret. Find it from your integration configuration tab:
 
 ![Copying your Integration token from the Configuration tab in the developer portal](https://github.com/user-attachments/assets/67b44536-5333-49fa-809c-59581bf5370a)
@@ -123,6 +192,10 @@ To install Notion API Server for Claude Desktop automatically via [Smithery](htt
 ```bash
 npx -y @smithery/cli install @makernotion/notion-mcp-server --client claude
 ```
+
+#### Configuration Examples
+
+For more configuration examples including remote mode, Docker, and multiple workspace setups, see [mcp-config-examples.json](./mcp-config-examples.json).
 
 ### Examples
 
@@ -145,20 +218,44 @@ Get the content of page 1a6b35e6e67f802fa7e1d27686f017f2
 
 ### Development
 
-Build
+#### Build
 
-```
+```bash
 npm run build
 ```
 
-Execute
+#### Execute (stdio mode)
 
-```
+```bash
 npx -y --prefix /path/to/local/notion-mcp-server @notionhq/notion-mcp-server
 ```
 
-Publish
+#### Run Remote Server (development)
 
+```bash
+npm run dev:remote
 ```
+
+This will start the remote MCP server on port 3000 with hot-reload enabled. Connect to it at:
+```
+http://localhost:3000/sse?notionApiKey=YOUR_KEY&baseUrl=https://api.notion.com&notionApiVersion=2022-06-28
+```
+
+#### Testing Remote Server
+
+Once the remote server is running, you can test it:
+
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Test SSE connection (requires MCP client or tool)
+curl "http://localhost:3000/sse?notionApiKey=YOUR_KEY&notionApiVersion=2022-06-28"
+```
+
+#### Publish
+
+```bash
 npm publish --access public
 ```
+

@@ -23,15 +23,24 @@ type NewToolDefinition = {
   }>
 }
 
+export interface MCPProxyConfig {
+  baseUrl?: string
+  notionApiKey: string
+  notionApiVersion?: string
+}
+
 // import this class, extend and return server
 export class MCPProxy {
   private server: Server
   private httpClient: HttpClient
   private tools: Record<string, NewToolDefinition>
   private openApiLookup: Record<string, OpenAPIV3.OperationObject & { method: string; path: string }>
+  private config?: MCPProxyConfig
 
-  constructor(name: string, openApiSpec: OpenAPIV3.Document) {
+  constructor(name: string, openApiSpec: OpenAPIV3.Document, config?: MCPProxyConfig) {
     this.server = new Server({ name, version: '1.0.0' }, { capabilities: { tools: {} } })
+    this.config = config
+    
     const baseUrl = openApiSpec.servers?.[0].url
     if (!baseUrl) {
       throw new Error('No base URL found in OpenAPI spec')
@@ -39,7 +48,7 @@ export class MCPProxy {
     this.httpClient = new HttpClient(
       {
         baseUrl,
-        headers: this.parseHeadersFromEnv(),
+        headers: this.parseHeaders(),
       },
       openApiSpec,
     )
@@ -123,12 +132,13 @@ export class MCPProxy {
     return this.openApiLookup[operationId] ?? null
   }
 
-  private parseHeadersFromEnv(): Record<string, string> {
-    const apiKey = process.env.NOTION_API_KEY
-    const apiVersion = process.env.NOTION_API_VERSION || '2022-06-28'
+  private parseHeaders(): Record<string, string> {
+    // Prefer config over environment variables for remote operation
+    const apiKey = this.config?.notionApiKey || process.env.NOTION_API_KEY
+    const apiVersion = this.config?.notionApiVersion || process.env.NOTION_API_VERSION || '2022-06-28'
 
     if (!apiKey) {
-      console.warn('NOTION_API_KEY environment variable must be set')
+      console.warn('NOTION_API_KEY must be provided via config or environment variable')
       return {}
     }
 

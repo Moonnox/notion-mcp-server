@@ -4,7 +4,7 @@ import path from 'node:path'
 import { OpenAPIV3 } from 'openapi-types'
 import OpenAPISchemaValidator from 'openapi-schema-validator'
 
-import { MCPProxy } from './openapi-mcp-server/mcp/proxy'
+import { MCPProxy, MCPProxyConfig } from './openapi-mcp-server/mcp/proxy'
 
 export class ValidationError extends Error {
   constructor(public errors: any[]) {
@@ -42,9 +42,16 @@ async function loadOpenApiSpec(specPath: string, baseUrl: string | undefined): P
   }
 }
 
-export async function initProxy(specPath: string, baseUrl: string |undefined) {
+export async function initProxy(specPath: string, baseUrl: string | undefined) {
   const openApiSpec = await loadOpenApiSpec(specPath, baseUrl)
   const proxy = new MCPProxy('Notion API', openApiSpec)
+
+  return proxy
+}
+
+export async function initProxyWithConfig(specPath: string, config: MCPProxyConfig) {
+  const openApiSpec = await loadOpenApiSpec(specPath, config.baseUrl)
+  const proxy = new MCPProxy('Notion API', openApiSpec, config)
 
   return proxy
 }

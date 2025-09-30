@@ -1,0 +1,103 @@
+{
+  "// Description": "Example MCP configurations for the Notion MCP Server",
+  
+  "// Stdio Mode - Local Execution": {
+    "mcpServers": {
+      "notionApi": {
+        "command": "npx",
+        "args": ["-y", "@notionhq/notion-mcp-server"],
+        "env": {
+          "NOTION_API_KEY": "ntn_your_api_key_here",
+          "NOTION_API_VERSION": "2022-06-28"
+        }
+      }
+    }
+  },
+
+  "// Remote Mode - HTTP/SSE with Query Parameters": {
+    "mcpServers": {
+      "notionApi": {
+        "url": "http://localhost:3000/sse",
+        "transport": "sse",
+        "queryParams": {
+          "notionApiKey": "ntn_your_api_key_here",
+          "baseUrl": "https://api.notion.com",
+          "notionApiVersion": "2022-06-28"
+        }
+      }
+    }
+  },
+
+  "// Remote Mode - Production Deployment": {
+    "mcpServers": {
+      "notionApi": {
+        "url": "https://your-domain.com/sse",
+        "transport": "sse",
+        "queryParams": {
+          "notionApiKey": "ntn_your_api_key_here",
+          "baseUrl": "https://api.notion.com",
+          "notionApiVersion": "2022-06-28"
+        }
+      }
+    }
+  },
+
+  "// Docker Stdio Mode": {
+    "mcpServers": {
+      "notionApi": {
+        "command": "docker",
+        "args": [
+          "run",
+          "--rm",
+          "-i",
+          "-e", "NOTION_API_KEY",
+          "-e", "NOTION_API_VERSION",
+          "mcp/notion"
+        ],
+        "env": {
+          "NOTION_API_KEY": "ntn_your_api_key_here",
+          "NOTION_API_VERSION": "2022-06-28"
+        }
+      }
+    }
+  },
+
+  "// Docker Remote Mode": {
+    "description": "First run: docker-compose up notion-mcp-server-remote",
+    "mcpServers": {
+      "notionApi": {
+        "url": "http://localhost:3000/sse",
+        "transport": "sse",
+        "queryParams": {
+          "notionApiKey": "ntn_your_api_key_here",
+          "baseUrl": "https://api.notion.com",
+          "notionApiVersion": "2022-06-28"
+        }
+      }
+    }
+  },
+
+  "// Multiple Notion Workspaces with Different API Keys": {
+    "mcpServers": {
+      "notionWorkspace1": {
+        "url": "http://localhost:3000/sse",
+        "transport": "sse",
+        "queryParams": {
+          "notionApiKey": "ntn_workspace1_key",
+          "baseUrl": "https://api.notion.com",
+          "notionApiVersion": "2022-06-28"
+        }
+      },
+      "notionWorkspace2": {
+        "url": "http://localhost:3000/sse",
+        "transport": "sse",
+        "queryParams": {
+          "notionApiKey": "ntn_workspace2_key",
+          "baseUrl": "https://api.notion.com",
+          "notionApiVersion": "2022-06-28"
+        }
+      }
+    }
+  }
+}
+

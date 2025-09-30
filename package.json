@@ -10,11 +10,13 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "tsc -build && node scripts/build-cli.js",
-    "dev": "tsx watch scripts/start-server.ts"
+    "build": "tsc -build && node scripts/build-cli.js && node scripts/build-remote-cli.js",
+    "dev": "tsx watch scripts/start-server.ts",
+    "dev:remote": "tsx watch scripts/start-remote-server.ts"
   },
   "bin": {
-    "notion-mcp-server": "bin/cli.mjs"
+    "notion-mcp-server": "bin/cli.mjs",
+    "notion-mcp-server-remote": "bin/remote-server.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.8.0",

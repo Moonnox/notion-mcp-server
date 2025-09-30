@@ -10,8 +10,8 @@ WORKDIR /app
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Install dependencies
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --omit-dev
+# Install dependencies (including dev dependencies for build)
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
@@ -19,19 +19,30 @@ COPY . .
 # Build the package
 RUN --mount=type=cache,target=/root/.npm npm run build
 
-# Install package globally
-RUN --mount=type=cache,target=/root/.npm npm link
-
 # Minimal image for runtime
 FROM node:20-slim
 
-# Copy built package from builder stage
-COPY scripts/notion-openapi.json /usr/local/scripts/
-COPY --from=builder /usr/local/lib/node_modules/@notionhq/notion-mcp-server /usr/local/lib/node_modules/@notionhq/notion-mcp-server
-COPY --from=builder /usr/local/bin/notion-mcp-server /usr/local/bin/notion-mcp-server
+# Set working directory
+WORKDIR /app
+
+# Copy built files
+COPY --from=builder /app/bin ./bin
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/scripts/notion-openapi.json ./scripts/
+COPY --from=builder /app/package*.json ./
+
+# Install only production dependencies
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --omit-dev
 
 # Set default environment variables
 ENV NOTION_API_VERSION="2022-06-28"
+ENV PORT=3000
+ENV NODE_ENV=production
 
-# Set entrypoint
-ENTRYPOINT ["notion-mcp-server"]
+# Expose port for remote connections
+EXPOSE 3000
+
+# Default to stdio mode for backward compatibility
+# Override with CMD to use remote mode
+ENTRYPOINT ["node"]
+CMD ["bin/cli.mjs"]
