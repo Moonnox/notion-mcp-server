@@ -26,6 +26,8 @@ This server is fully compliant with the Model Context Protocol (MCP) specificati
 
 For remote deployment information, see [REMOTE_DEPLOYMENT.md](./REMOTE_DEPLOYMENT.md).
 
+For Google Cloud Run specific deployment, see [CLOUD_RUN_DEPLOY.md](./CLOUD_RUN_DEPLOY.md).
+
 ### Installation
 
 #### 1. Setting up Integration in Notion:
