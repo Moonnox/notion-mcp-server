@@ -46,6 +46,7 @@ ENV NODE_ENV=production
 # Expose port for remote connections
 EXPOSE 3000
 
+
 # Run remote server by default (for cloud deployments)
 # For stdio mode (local), override with: docker run ... node bin/cli.mjs
 CMD ["node", "build/scripts/start-remote-server.js"]
