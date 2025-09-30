@@ -145,13 +145,13 @@ For remote connections, you can run the server in HTTP mode with SSE transport. 
 First, start the remote server:
 
 ```bash
-docker-compose up notion-mcp-server-remote
+docker-compose up notion-mcp-server
 ```
 
 Or run directly with Docker:
 
 ```bash
-docker run -p 3000:3000 notion-mcp-server node build/scripts/start-remote-server.js
+docker run -p 3000:3000 notion-mcp-server
 ```
 
 The server will start on port 3000 (configurable via PORT environment variable).
