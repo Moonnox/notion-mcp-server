@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'url'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
+import type { Server as MCPServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { initProxyWithConfig } from '../src/init-server.js'
 
 const filename = fileURLToPath(import.meta.url)
@@ -14,6 +15,7 @@ const port = process.env.PORT || 3000
 // Store active transport sessions by session ID
 interface SessionInfo {
   transport: SSEServerTransport
+  server: MCPServer
   notionApiKey: string
 }
 const sessions = new Map<string, SessionInfo>()
@@ -80,8 +82,10 @@ async function handleSSEConnection(req: Request, res: Response) {
     // Create transport with /messages endpoint - the SDK will handle routing internally
     const transport = new SSEServerTransport('/messages', res)
     
-    // Store transport and config for this session
-    sessions.set(sessionId, { transport, notionApiKey })
+    // Connect and store transport + server for this session
+    console.log(`Connecting proxy to transport for session ${sessionId}`)
+    await proxy.connect(transport)
+    sessions.set(sessionId, { transport, server: proxy.getServer(), notionApiKey })
     
     // Send session ID as a custom header for the client to use
     res.setHeader('X-Session-ID', sessionId)
@@ -91,9 +95,6 @@ async function handleSSEConnection(req: Request, res: Response) {
       console.log(`Session ${sessionId} closed`)
       sessions.delete(sessionId)
     })
-    
-    console.log(`Connecting proxy to transport for session ${sessionId}`)
-    await proxy.connect(transport)
     
     console.log(`MCP connection established successfully for session ${sessionId}`)
   } catch (error) {
