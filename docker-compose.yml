@@ -21,7 +21,7 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
-    command: ["node", "bin/cli.mjs"]
+    command: ["bin/cli.mjs"]
     environment:
       - NOTION_API_KEY=${NOTION_API_KEY}
       - NOTION_API_VERSION=${NOTION_API_VERSION:-2022-06-28}

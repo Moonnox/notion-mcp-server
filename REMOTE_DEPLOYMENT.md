@@ -84,7 +84,7 @@ docker run -d -p 3000:3000 \
 docker run -i --rm \
   -e NOTION_API_KEY=your_key \
   notion-mcp-server \
-  node bin/cli.mjs
+  bin/cli.mjs
 ```
 
 ### 3. Cloud Deployment

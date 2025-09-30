@@ -27,7 +27,6 @@ WORKDIR /app
 
 # Copy built files
 COPY --from=builder /app/bin ./bin
-COPY --from=builder /app/build ./build
 COPY --from=builder /app/scripts/notion-openapi.json ./scripts/
 COPY --from=builder /app/package*.json ./
 
@@ -43,5 +42,5 @@ ENV NODE_ENV=production
 EXPOSE 3000
 
 # Run remote server by default (for cloud deployments)
-# For stdio mode (local), override with: docker run ... node bin/cli.mjs
-CMD ["node", "build/scripts/start-remote-server.js"]
+# For stdio mode (local), override with: docker run ... bin/cli.mjs
+CMD ["bin/remote-server.mjs"]
