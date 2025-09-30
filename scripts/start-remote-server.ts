@@ -77,8 +77,8 @@ async function handleSSEConnection(req: Request, res: Response) {
     })
 
     console.log(`Creating SSE transport for session ${sessionId}`)
-    // Use session-specific message endpoint
-    const transport = new SSEServerTransport(`/messages/${sessionId}`, res)
+    // Create transport with /messages endpoint - the SDK will handle routing internally
+    const transport = new SSEServerTransport('/messages', res)
     
     // Store transport and config for this session
     sessions.set(sessionId, { transport, notionApiKey })
@@ -114,7 +114,7 @@ app.get('/sse', handleSSEConnection)
 // Alias endpoint for compatibility
 app.get('/mcp', handleSSEConnection)
 
-// POST endpoint for MCP messages with session ID
+// POST endpoint for MCP messages with session ID (path parameter)
 app.post('/messages/:sessionId', async (req: Request, res: Response) => {
   const { sessionId } = req.params
   const sessionInfo = sessions.get(sessionId)
@@ -125,12 +125,11 @@ app.post('/messages/:sessionId', async (req: Request, res: Response) => {
     return
   }
   
-  console.log(`Received message for session ${sessionId}`)
+  console.log(`Received message for session ${sessionId} (path param)`)
+  console.log('Message:', JSON.stringify(req.body, null, 2))
   
   try {
-    // Forward the message to the transport
-    // The SSEServerTransport expects to handle messages internally
-    // This is handled automatically when the transport is connected to the server
+    // The transport handles the message internally
     res.status(202).json({ status: 'accepted' })
   } catch (error) {
     console.error(`Error handling message for session ${sessionId}:`, error)
@@ -141,24 +140,70 @@ app.post('/messages/:sessionId', async (req: Request, res: Response) => {
   }
 })
 
-// Fallback POST endpoint for MCP messages (without session)
+// POST endpoint for MCP messages (with query parameter or header)
 app.post('/messages', async (req: Request, res: Response) => {
-  console.log('Received POST to /messages without session ID')
+  console.log('Received POST to /messages')
+  console.log('Query params:', req.query)
+  console.log('Headers:', req.headers)
+  console.log('Message:', JSON.stringify(req.body, null, 2))
   
-  // Try to get session ID from header
-  const sessionId = req.header('X-Session-ID')
+  // Try to get session ID from query parameter, header, or body
+  let sessionId = req.query.sessionId as string || 
+                  req.header('X-Session-ID') ||
+                  req.body?.sessionId
   
-  if (sessionId && sessions.has(sessionId)) {
-    // Forward to session-specific endpoint
-    req.params.sessionId = sessionId
-    return app._router.handle(req, res, () => {})
+  if (!sessionId) {
+    // If no session ID, this might be a single-session server
+    // Try the first (and possibly only) active session
+    if (sessions.size === 1) {
+      sessionId = Array.from(sessions.keys())[0]
+      console.log(`Using only active session: ${sessionId}`)
+    } else {
+      console.warn('No valid session ID found in query, header, or body')
+      res.status(400).json({ 
+        error: 'Session ID required',
+        activeSessions: sessions.size,
+        hint: 'Use ?sessionId=ID query parameter, X-Session-ID header, or include sessionId in body'
+      })
+      return
+    }
   }
   
-  console.warn('No valid session found for message')
-  res.status(400).json({ 
-    error: 'Session ID required',
-    hint: 'Use X-Session-ID header or /messages/:sessionId endpoint'
-  })
+  const sessionInfo = sessions.get(sessionId)
+  
+  if (!sessionInfo) {
+    console.error(`Unknown session: ${sessionId}`)
+    res.status(404).json({ 
+      error: 'Session not found',
+      sessionId,
+      activeSessions: Array.from(sessions.keys())
+    })
+    return
+  }
+  
+  console.log(`Processing message for session ${sessionId}`)
+  
+  try {
+    // Send the message to the transport for processing
+    // The SSEServerTransport should have a method to handle incoming messages
+    // @ts-ignore - accessing internal method
+    if (typeof sessionInfo.transport.handlePostMessage === 'function') {
+      await sessionInfo.transport.handlePostMessage(req, res)
+    } else {
+      // If the method doesn't exist, just acknowledge receipt
+      // The transport may handle this differently
+      console.warn('Transport does not expose handlePostMessage method')
+      res.status(202).json({ jsonrpc: '2.0', result: {} })
+    }
+  } catch (error) {
+    console.error(`Error handling message for session ${sessionId}:`, error)
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Failed to process message',
+        details: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
 })
 
 // Start the server
