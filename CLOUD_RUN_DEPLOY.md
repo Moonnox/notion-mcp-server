@@ -39,8 +39,6 @@ gcloud run deploy notion-mcp-server \
   --min-instances 1 \
   --max-instances 10 \
   --set-env-vars=NODE_ENV=production,PORT=3000 \
-  --command=node \
-  --args=build/scripts/start-remote-server.js \
   --timeout=60
 ```
 
@@ -48,17 +46,19 @@ gcloud run deploy notion-mcp-server \
 
 ### Critical Parameters
 
-- `--command=node` - Override the default entrypoint
-- `--args=build/scripts/start-remote-server.js` - Run the remote server (not stdio)
 - `--port=3000` - Must match the PORT environment variable
+- `--set-env-vars=NODE_ENV=production,PORT=3000` - Set runtime environment
 - `--timeout=60` - Request timeout (increase if needed)
 
-### Why These Are Required
+### Default Behavior
 
-The default Dockerfile CMD starts the stdio server (`bin/cli.mjs`), which doesn't listen on a port. Cloud Run requires a server that:
+The Dockerfile now runs the remote HTTP/SSE server by default (`build/scripts/start-remote-server.js`), which:
 1. Listens on the port specified by the `PORT` environment variable (3000)
-2. Responds to HTTP health checks
-3. Starts within the timeout period
+2. Responds to HTTP health checks at `/health`
+3. Serves SSE connections at `/sse`
+4. Starts within the timeout period
+
+No command overrides are needed!
 
 ## Environment Variables
 
@@ -115,20 +115,14 @@ Expected response:
 
 **Solutions**:
 
-1. **Verify command and args are set correctly**:
+1. **Verify the correct image is deployed**:
    ```bash
    gcloud run services describe notion-mcp-server \
      --region us-central1 \
-     --format='yaml(spec.template.spec.containers[0].command, spec.template.spec.containers[0].args)'
+     --format='yaml(spec.template.spec.containers[0].image)'
    ```
    
-   Should show:
-   ```yaml
-   command:
-   - node
-   args:
-   - build/scripts/start-remote-server.js
-   ```
+   Ensure it's the latest build with the updated Dockerfile.
 
 2. **Check logs**:
    ```bash

@@ -50,14 +50,14 @@ The server will be available at `http://localhost:3000/sse`
 #### Using Docker Compose
 
 ```bash
-# Start the remote server
-docker-compose up notion-mcp-server-remote
+# Start the remote server (default mode)
+docker-compose up notion-mcp-server
 
 # Or run in detached mode
-docker-compose up -d notion-mcp-server-remote
+docker-compose up -d notion-mcp-server
 
 # View logs
-docker-compose logs -f notion-mcp-server-remote
+docker-compose logs -f notion-mcp-server
 
 # Stop the server
 docker-compose down
@@ -69,18 +69,22 @@ docker-compose down
 # Build the image
 docker build -t notion-mcp-server .
 
-# Run the remote server
+# Run the remote server (default mode)
 docker run -p 3000:3000 \
   --name notion-mcp-remote \
-  notion-mcp-server \
-  node build/scripts/start-remote-server.js
+  notion-mcp-server
 
 # Run in detached mode
 docker run -d -p 3000:3000 \
   --restart unless-stopped \
   --name notion-mcp-remote \
+  notion-mcp-server
+
+# For stdio mode, override the command
+docker run -i --rm \
+  -e NOTION_API_KEY=your_key \
   notion-mcp-server \
-  node build/scripts/start-remote-server.js
+  node bin/cli.mjs
 ```
 
 ### 3. Cloud Deployment
@@ -180,8 +184,6 @@ gcloud run deploy notion-mcp-server \
   --min-instances 1 \
   --max-instances 10 \
   --set-env-vars=NODE_ENV=production,PORT=3000 \
-  --command=node \
-  --args=build/scripts/start-remote-server.js \
   --timeout=60
 ```
 
@@ -203,8 +205,6 @@ gcloud run deploy notion-mcp-server \
   --min-instances 1 \
   --max-instances 10 \
   --set-env-vars=NODE_ENV=production,PORT=3000 \
-  --command=node \
-  --args=build/scripts/start-remote-server.js \
   --timeout=60
 ```
 

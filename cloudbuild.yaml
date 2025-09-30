@@ -46,8 +46,6 @@ steps:
 #      - '--min-instances=1'
 #      - '--max-instances=10'
 #      - '--set-env-vars=NODE_ENV=production,PORT=3000'
-#      - '--command=node'
-#      - '--args=build/scripts/start-remote-server.js'
 #      - '--timeout=60'
 
 # Images to be pushed to GCR

@@ -47,9 +47,7 @@ gcloud run deploy $SERVICE_NAME \
   --min-instances 1 \
   --max-instances 10 \
   --timeout 60 \
-  --set-env-vars "NODE_ENV=production,PORT=3000" \
-  --command node \
-  --args "build/scripts/start-remote-server.js"
+  --set-env-vars "NODE_ENV=production,PORT=3000"
 
 # Get service URL
 echo ""

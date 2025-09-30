@@ -28,21 +28,28 @@ defined provided by the PORT=3000 environment variable
 
 **Root Cause**: The default Docker CMD was `bin/cli.mjs` which starts the **stdio server** (for local MCP connections). This doesn't listen on any port. Cloud Run requires an HTTP server.
 
-**Solution**: Deploy with explicit command override to run the **remote server**:
+**Solution**: Updated the Dockerfile to run the **remote server by default**:
+
+```dockerfile
+CMD ["node", "build/scripts/start-remote-server.js"]
+```
+
+Now deployment is simple - no command overrides needed:
 
 ```bash
 gcloud run deploy notion-mcp-server \
   --image gcr.io/PROJECT_ID/notion-mcp-server:latest \
-  --command=node \
-  --args=build/scripts/start-remote-server.js \
   --port=3000 \
   --set-env-vars=NODE_ENV=production,PORT=3000
 ```
 
 **Files Changed**:
-- `REMOTE_DEPLOYMENT.md` - Updated Cloud Run deployment commands
-- `cloudbuild.yaml` - Added Cloud Run deployment step with correct command
+- `Dockerfile` - Changed default CMD to run remote server
+- `Dockerfile.buildkit` - Changed default CMD to run remote server
+- `docker-compose.yml` - Simplified, remote mode is now default
+- `REMOTE_DEPLOYMENT.md` - Updated with simplified commands
 - `CLOUD_RUN_DEPLOY.md` - New comprehensive Cloud Run guide
+- `README.md` - Updated Docker examples
 
 ---
 
@@ -70,8 +77,6 @@ gcloud run deploy notion-mcp-server \
   --min-instances 1 \
   --max-instances 10 \
   --set-env-vars=NODE_ENV=production,PORT=3000 \
-  --command=node \
-  --args=build/scripts/start-remote-server.js \
   --timeout=60
 ```
 
@@ -85,10 +90,9 @@ gcloud builds submit --tag gcr.io/$PROJECT_ID/notion-mcp-server
 gcloud run deploy notion-mcp-server \
   --image gcr.io/$PROJECT_ID/notion-mcp-server \
   --region us-central1 \
-  --command=node \
-  --args=build/scripts/start-remote-server.js \
   --port=3000 \
-  --set-env-vars=PORT=3000
+  --set-env-vars=NODE_ENV=production,PORT=3000 \
+  --timeout=60
 ```
 
 ---
@@ -118,21 +122,15 @@ Expected response:
 {"status":"healthy","timestamp":"2025-09-30T12:00:00.000Z"}
 ```
 
-### 3. Verify Command Override
+### 3. Verify Container Configuration
 
 ```bash
 gcloud run services describe notion-mcp-server \
   --region us-central1 \
-  --format='yaml(spec.template.spec.containers[0].command, spec.template.spec.containers[0].args)'
+  --format='yaml(spec.template.spec.containers[0].image, spec.template.spec.containers[0].ports, spec.template.spec.containers[0].env)'
 ```
 
-Should show:
-```yaml
-command:
-- node
-args:
-- build/scripts/start-remote-server.js
-```
+Should show the latest image, port 3000, and environment variables.
 
 ---
 
