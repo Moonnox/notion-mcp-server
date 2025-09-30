@@ -28,11 +28,13 @@ defined provided by the PORT=3000 environment variable
 
 **Root Cause**: The default Docker CMD was `bin/cli.mjs` which starts the **stdio server** (for local MCP connections). This doesn't listen on any port. Cloud Run requires an HTTP server.
 
-**Solution**: Updated the Dockerfile to run the **remote server by default**:
+**Solution**: Updated the Dockerfile to run the **bundled remote server by default**:
 
 ```dockerfile
-CMD ["node", "build/scripts/start-remote-server.js"]
+CMD ["bin/remote-server.mjs"]
 ```
+
+This uses the bundled, self-contained binary created by esbuild (no module resolution issues).
 
 Now deployment is simple - no command overrides needed:
 

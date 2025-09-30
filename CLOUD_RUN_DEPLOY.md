@@ -52,7 +52,7 @@ gcloud run deploy notion-mcp-server \
 
 ### Default Behavior
 
-The Dockerfile now runs the remote HTTP/SSE server by default (`build/scripts/start-remote-server.js`), which:
+The Dockerfile now runs the remote HTTP/SSE server by default (`bin/remote-server.mjs` - a bundled, self-contained binary), which:
 1. Listens on the port specified by the `PORT` environment variable (3000)
 2. Responds to HTTP health checks at `/health`
 3. Serves SSE connections at `/sse`
