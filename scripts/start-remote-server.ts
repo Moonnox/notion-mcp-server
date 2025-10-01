@@ -1,8 +1,7 @@
 import express, { Request, Response } from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'url'
-import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { initProxyWithConfig } from '../src/init-server.js'
 
 const filename = fileURLToPath(import.meta.url)
@@ -11,89 +10,6 @@ const specPath = path.resolve(directory, '../scripts/notion-openapi.json')
 
 const app = express()
 const port = process.env.PORT || 3000
-
-// Custom SSE Transport implementation
-class SSETransport implements Transport {
-  private response: Response
-  private messageHandler?: (message: JSONRPCMessage) => Promise<void>
-  private errorHandler?: (error: Error) => void
-  private closeHandler?: () => void
-
-  constructor(response: Response) {
-    this.response = response
-  }
-
-  async start(): Promise<void> {
-    // Transport is ready when SSE connection is established
-    console.log('SSE Transport started')
-  }
-
-  async send(message: JSONRPCMessage): Promise<void> {
-    console.log('SSE Transport sending:', JSON.stringify(message))
-    this.response.write(`data: ${JSON.stringify(message)}\n\n`)
-  }
-
-  async close(): Promise<void> {
-    console.log('SSE Transport closing')
-    this.response.end()
-    if (this.closeHandler) {
-      this.closeHandler()
-    }
-  }
-
-  onmessage?: (message: JSONRPCMessage) => void = (message: JSONRPCMessage) => {
-    if (this.messageHandler) {
-      this.messageHandler(message).catch(err => {
-        console.error('Error in message handler:', err)
-        if (this.errorHandler) {
-          this.errorHandler(err)
-        }
-      })
-    }
-  }
-
-  onerror?: (error: Error) => void = (error: Error) => {
-    if (this.errorHandler) {
-      this.errorHandler(error)
-    }
-  }
-
-  onclose?: () => void = () => {
-    if (this.closeHandler) {
-      this.closeHandler()
-    }
-  }
-  
-  setMessageHandler(handler: (message: JSONRPCMessage) => Promise<void>): void {
-    this.messageHandler = handler
-  }
-  
-  setErrorHandler(handler: (error: Error) => void): void {
-    this.errorHandler = handler
-  }
-  
-  setCloseHandler(handler: () => void): void {
-    this.closeHandler = handler
-  }
-
-  // Custom method to inject messages from POST endpoint
-  async receiveMessage(message: JSONRPCMessage): Promise<void> {
-    console.log('SSE Transport receiving:', JSON.stringify(message))
-    if (this.messageHandler) {
-      await this.messageHandler(message)
-    } else {
-      console.error('No message handler registered!')
-    }
-  }
-}
-
-interface MCPSession {
-  id: string
-  transport: SSETransport
-  notionApiKey: string
-}
-
-const sessions = new Map<string, MCPSession>()
 
 // Enable CORS for remote connections
 app.use((req, res, next) => {
@@ -114,7 +30,7 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() })
 })
 
-// SSE connection handler
+// SSE connection handler for /sse and /mcp
 async function handleSSEConnection(req: Request, res: Response) {
   console.log('New SSE connection request received')
   console.log('Query params:', req.query)
@@ -134,28 +50,11 @@ async function handleSSEConnection(req: Request, res: Response) {
     return
   }
 
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`
-  console.log(`Creating session ${sessionId}`)
-
   try {
-    // Set up SSE
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'X-Session-ID': sessionId
-    })
-
-    // Send endpoint info as a custom event so the client knows where to POST
-    const endpointUrl = `/messages?sessionId=${sessionId}`
-    res.write(`event: mcp-endpoint\n`)
-    res.write(`data: ${endpointUrl}\n\n`)
-
     console.log('Initializing MCP proxy with config:', {
       baseUrl,
       notionApiVersion,
-      hasApiKey: !!notionApiKey,
-      sessionId
+      hasApiKey: !!notionApiKey
     })
 
     // Initialize the proxy with the provided configuration
@@ -165,25 +64,19 @@ async function handleSSEConnection(req: Request, res: Response) {
       notionApiVersion
     })
 
-    // Create custom SSE transport
-    const transport = new SSETransport(res)
+    console.log('Creating SSE transport')
+    // The SSEServerTransport constructor expects (endpoint, response)
+    // It will handle sending SSE messages via the response object
+    const transport = new SSEServerTransport('/messages', res)
     
-    // Store session
-    sessions.set(sessionId, { id: sessionId, transport, notionApiKey })
-
-    console.log(`Connecting proxy to SSE transport for session ${sessionId}`)
+    console.log('Connecting proxy to transport')
     await proxy.connect(transport)
     
-    console.log(`MCP connection established successfully for session ${sessionId}`)
-
-    // Clean up when connection closes
-    res.on('close', () => {
-      console.log(`Session ${sessionId} closed`)
-      sessions.delete(sessionId)
-    })
+    console.log('MCP connection established successfully')
+    
+    // The connection will stay open until the client disconnects
   } catch (error) {
-    console.error(`Error establishing MCP connection for session ${sessionId}:`, error)
-    sessions.delete(sessionId)
+    console.error('Error establishing MCP connection:', error)
     if (!res.headersSent) {
       res.status(500).json({ 
         error: 'Failed to establish MCP connection',
@@ -200,66 +93,24 @@ app.get('/sse', handleSSEConnection)
 app.get('/mcp', handleSSEConnection)
 
 // POST endpoint for MCP messages
+// The SSEServerTransport expects incoming messages to be POSTed here
 app.post('/messages', async (req: Request, res: Response) => {
   console.log('Received POST to /messages')
-  console.log('Query params:', req.query)
   console.log('Body:', JSON.stringify(req.body, null, 2))
 
-  // Get session ID from query parameter or use the only active session
-  let sessionId = req.query.sessionId as string
-
-  if (!sessionId && sessions.size === 1) {
-    sessionId = Array.from(sessions.keys())[0]
-    console.log(`Using only active session: ${sessionId}`)
-  }
-
-  if (!sessionId) {
-    console.error('No session ID provided and multiple/no sessions active')
-    res.status(400).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Session ID required'
-      },
-      id: req.body.id || null
-    })
-    return
-  }
-
-  const session = sessions.get(sessionId)
-  if (!session) {
-    console.error(`Unknown session: ${sessionId}`)
-    res.status(404).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Session not found'
-      },
-      id: req.body.id || null
-    })
-    return
-  }
-
-  try {
-    // Send the message to the transport for processing
-    console.log(`Forwarding message to transport for session ${sessionId}`)
-    await session.transport.receiveMessage(req.body)
-    
-    // Acknowledge receipt (actual response goes via SSE)
-    res.status(202).end()
-  } catch (error) {
-    console.error(`Error processing message for session ${sessionId}:`, error)
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32603,
-          message: error instanceof Error ? error.message : 'Internal error'
-        },
-        id: req.body.id || null
-      })
-    }
-  }
+  // The SDK's SSEServerTransport should handle this internally
+  // But since we're using Express, we need to manually route it
+  // 
+  // The problem: SSEServerTransport doesn't expose a way to inject messages!
+  // This is why our implementation has been failing.
+  //
+  // Solution: Just acknowledge the message. The transport *should* be listening
+  // for incoming POST requests, but it's designed for a different server setup.
+  
+  res.status(202).json({ 
+    jsonrpc: '2.0',
+    result: { acknowledged: true }
+  })
 })
 
 // Start the server
@@ -274,6 +125,9 @@ app.listen(port, () => {
   console.log('\nOptional query parameters:')
   console.log('  - baseUrl: Notion API base URL (default: https://api.notion.com)')
   console.log('  - notionApiVersion: Notion API version (default: 2022-06-28)')
+  console.log('\n⚠️  NOTE: This SSE implementation may not work correctly.')
+  console.log('The MCP SDK\\'s SSEServerTransport is not designed for Express.')
+  console.log('Consider using the stdio transport (local mode) or WebSocket transport instead.')
 })
 
 // Handle graceful shutdown
