@@ -1,8 +1,10 @@
-import express, { Request, Response } from 'express'
+import express from 'express'
+import type { Request, Response } from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'url'
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { initProxyWithConfig } from '../src/init-server.js'
+import type { MCPProxy } from '../src/openapi-mcp-server/mcp/proxy.js'
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
 const filename = fileURLToPath(import.meta.url)
 const directory = path.dirname(filename)
@@ -10,6 +12,9 @@ const specPath = path.resolve(directory, '../scripts/notion-openapi.json')
 
 const app = express()
 const port = process.env.PORT || 3000
+
+// Store MCP server instances per API key (for multi-tenant support)
+const serverCache = new Map<string, MCPProxy>()
 
 // Enable CORS for remote connections
 app.use((req, res, next) => {
@@ -30,104 +35,199 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() })
 })
 
-// SSE connection handler for /sse and /mcp
-async function handleSSEConnection(req: Request, res: Response) {
-  console.log('New SSE connection request received')
-  console.log('Query params:', req.query)
-
-  // Extract configuration from query parameters
-  const notionApiKey = req.query.notionApiKey as string
-  const baseUrl = (req.query.baseUrl as string) || 'https://api.notion.com'
-  const notionApiVersion = (req.query.notionApiVersion as string) || '2022-06-28'
-
-  // Validate required parameters
-  if (!notionApiKey) {
-    console.error('Missing required parameter: notionApiKey')
-    res.status(400).json({ 
-      error: 'Missing required query parameter: notionApiKey',
-      usage: '/sse?notionApiKey=YOUR_KEY&baseUrl=https://api.notion.com&notionApiVersion=2022-06-28'
-    })
-    return
-  }
-
-  try {
-    console.log('Initializing MCP proxy with config:', {
-      baseUrl,
-      notionApiVersion,
-      hasApiKey: !!notionApiKey
-    })
-
-    // Initialize the proxy with the provided configuration
-    const proxy = await initProxyWithConfig(specPath, {
-      baseUrl,
-      notionApiKey,
-      notionApiVersion
-    })
-
-    console.log('Creating SSE transport')
-    // The SSEServerTransport constructor expects (endpoint, response)
-    // It will handle sending SSE messages via the response object
-    const transport = new SSEServerTransport('/messages', res)
-    
-    console.log('Connecting proxy to transport')
-    await proxy.connect(transport)
-    
-    console.log('MCP connection established successfully')
-    
-    // The connection will stay open until the client disconnects
-  } catch (error) {
-    console.error('Error establishing MCP connection:', error)
-    if (!res.headersSent) {
-      res.status(500).json({ 
-        error: 'Failed to establish MCP connection',
-        details: error instanceof Error ? error.message : String(error)
-      })
+// Root endpoint with server information
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    service: 'Notion MCP Server',
+    version: '1.8.1',
+    description: 'Model Context Protocol server for Notion API',
+    endpoints: {
+      '/health': 'Health check endpoint',
+      '/mcp': 'MCP JSON-RPC endpoint (POST)',
+      '/tools': 'List available tools'
+    },
+    usage: {
+      mcp_endpoint: '/mcp',
+      required_query_params: ['notionApiKey'],
+      optional_query_params: ['baseUrl', 'notionApiVersion']
     }
+  })
+})
+
+// Get or create MCP server instance for given config
+async function getOrCreateServer(
+  notionApiKey: string,
+  baseUrl: string,
+  notionApiVersion: string
+): Promise<MCPProxy> {
+  const cacheKey = `${notionApiKey}:${baseUrl}:${notionApiVersion}`
+  
+  if (serverCache.has(cacheKey)) {
+    return serverCache.get(cacheKey)!
   }
+
+  console.log('Creating new MCP server instance')
+  const proxy = await initProxyWithConfig(specPath, {
+    baseUrl,
+    notionApiKey,
+    notionApiVersion
+  })
+
+  serverCache.set(cacheKey, proxy)
+  return proxy
 }
 
-// SSE endpoint for MCP connections (primary)
-app.get('/sse', handleSSEConnection)
+// Main MCP endpoint - handles all JSON-RPC requests
+app.post('/mcp', async (req: Request, res: Response) => {
+  try {
+    const body = req.body
+    console.log('Received MCP request:', JSON.stringify(body, null, 2))
 
-// Alias endpoint for compatibility
-app.get('/mcp', handleSSEConnection)
+    // Extract configuration from query parameters
+    const notionApiKey = req.query.notionApiKey as string
+    const baseUrl = (req.query.baseUrl as string) || 'https://api.notion.com'
+    const notionApiVersion = (req.query.notionApiVersion as string) || '2022-06-28'
 
-// POST endpoint for MCP messages
-// The SSEServerTransport expects incoming messages to be POSTed here
-app.post('/messages', async (req: Request, res: Response) => {
-  console.log('Received POST to /messages')
-  console.log('Body:', JSON.stringify(req.body, null, 2))
+    // Validate required parameters
+    if (!notionApiKey) {
+      return res.status(200).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32602,
+          message: 'Missing required query parameter: notionApiKey'
+        },
+        id: body.id || null
+      })
+    }
 
-  // The SDK's SSEServerTransport should handle this internally
-  // But since we're using Express, we need to manually route it
-  // 
-  // The problem: SSEServerTransport doesn't expose a way to inject messages!
-  // This is why our implementation has been failing.
-  //
-  // Solution: Just acknowledge the message. The transport *should* be listening
-  // for incoming POST requests, but it's designed for a different server setup.
-  
-  res.status(202).json({ 
-    jsonrpc: '2.0',
-    result: { acknowledged: true }
-  })
+    const method = body.method
+    const params = body.params || {}
+    const requestId = body.id
+
+    // Get or create MCP server instance
+    const proxy = await getOrCreateServer(notionApiKey, baseUrl, notionApiVersion)
+    const server = proxy.getServer()
+
+    // Route to appropriate handler based on method
+    if (method === 'initialize') {
+      const result = {
+        protocolVersion: '2024-11-05',
+        capabilities: {
+          tools: {},
+          prompts: null,
+          resources: null
+        },
+        serverInfo: {
+          name: 'notion-mcp-server',
+          version: '1.8.1'
+        }
+      }
+
+      return res.json({
+        jsonrpc: '2.0',
+        result,
+        id: requestId
+      })
+    } 
+    else if (method === 'tools/list') {
+      // Access the internal request handlers directly
+      const handlers = (server as any)._requestHandlers
+      const listToolsHandler = handlers?.get(ListToolsRequestSchema)
+      
+      if (listToolsHandler) {
+        const result = await listToolsHandler({})
+        return res.json({
+          jsonrpc: '2.0',
+          result,
+          id: requestId
+        })
+      } else {
+        throw new Error('tools/list handler not found')
+      }
+    }
+    else if (method === 'tools/call') {
+      // Access the internal request handlers directly
+      const handlers = (server as any)._requestHandlers
+      const callToolHandler = handlers?.get(CallToolRequestSchema)
+      
+      if (callToolHandler) {
+        const result = await callToolHandler({
+          params: {
+            name: params.name,
+            arguments: params.arguments || {}
+          }
+        })
+        return res.json({
+          jsonrpc: '2.0',
+          result,
+          id: requestId
+        })
+      } else {
+        throw new Error('tools/call handler not found')
+      }
+    }
+    else {
+      // Method not found
+      return res.json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32601,
+          message: `Method not found: ${method}`
+        },
+        id: requestId
+      })
+    }
+  } catch (error) {
+    console.error('Error handling MCP request:', error)
+    return res.json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
+      },
+      id: req.body?.id || null
+    })
+  }
+})
+
+// List available tools endpoint  
+app.get('/tools', async (req: Request, res: Response) => {
+  try {
+    // Use a placeholder API key for listing tools (doesn't execute, just lists)
+    const notionApiKey = req.query.notionApiKey as string || 'placeholder'
+    const proxy = await getOrCreateServer(notionApiKey, 'https://api.notion.com', '2022-06-28')
+    const server = proxy.getServer()
+
+    const handlers = (server as any)._requestHandlers
+    const listToolsHandler = handlers?.get(ListToolsRequestSchema)
+    
+    if (listToolsHandler) {
+      const result = await listToolsHandler({})
+      return res.json(result)
+    } else {
+      throw new Error('tools/list handler not found')
+    }
+  } catch (error) {
+    console.error('Error listing tools:', error)
+    return res.status(500).json({
+      error: 'Failed to list tools',
+      details: error instanceof Error ? error.message : String(error)
+    })
+  }
 })
 
 // Start the server
 app.listen(port, () => {
   console.log(`Notion MCP Server listening on port ${port}`)
-  console.log(`SSE endpoint: http://localhost:${port}/sse`)
+  console.log(`MCP endpoint: http://localhost:${port}/mcp`)
   console.log(`Health check: http://localhost:${port}/health`)
   console.log('\nUsage:')
-  console.log(`  Connect to: http://localhost:${port}/sse?notionApiKey=YOUR_KEY&baseUrl=https://api.notion.com&notionApiVersion=2022-06-28`)
+  console.log(`  POST to: http://localhost:${port}/mcp?notionApiKey=YOUR_KEY`)
   console.log('\nRequired query parameters:')
   console.log('  - notionApiKey: Your Notion integration API key')
   console.log('\nOptional query parameters:')
   console.log('  - baseUrl: Notion API base URL (default: https://api.notion.com)')
   console.log('  - notionApiVersion: Notion API version (default: 2022-06-28)')
-  console.log('\n⚠️  NOTE: This SSE implementation may not work correctly.')
-  console.log('The MCP SDK\\'s SSEServerTransport is not designed for Express.')
-  console.log('Consider using the stdio transport (local mode) or WebSocket transport instead.')
 })
 
 // Handle graceful shutdown
