@@ -175,4 +175,58 @@ export class MCPProxy {
   getServer() {
     return this.server
   }
+
+  // Public method to list tools (for HTTP/REST endpoints)
+  async listTools() {
+    const tools: Tool[] = []
+    Object.entries(this.tools).forEach(([toolName, def]) => {
+      def.methods.forEach(method => {
+        const toolNameWithMethod = `${toolName}-${method.name}`
+        const truncatedToolName = this.truncateToolName(toolNameWithMethod)
+        tools.push({
+          name: truncatedToolName,
+          description: method.description,
+          inputSchema: method.inputSchema as Tool['inputSchema'],
+        })
+      })
+    })
+    return { tools }
+  }
+
+  // Public method to call a tool (for HTTP/REST endpoints)
+  async callTool(name: string, args: Record<string, any>) {
+    const operation = this.findOperation(name)
+    if (!operation) {
+      throw new Error(`Method ${name} not found`)
+    }
+
+    try {
+      const response = await this.httpClient.executeOperation(operation, args)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(response.data),
+          },
+        ],
+      }
+    } catch (error) {
+      console.error('Error in tool call', error)
+      if (error instanceof HttpClientError) {
+        const data = error.data?.response?.data ?? error.data ?? {}
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'error',
+                ...(typeof data === 'object' ? data : { data: data }),
+              }),
+            },
+          ],
+        }
+      }
+      throw error
+    }
+  }
 }
