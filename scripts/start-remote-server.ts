@@ -146,9 +146,8 @@ async function handleSSEConnection(req: Request, res: Response) {
       'X-Session-ID': sessionId
     })
 
-    // Send endpoint info as first event so client knows where to POST
-    res.write(`event: endpoint\n`)
-    res.write(`data: ${JSON.stringify({ url: '/messages', sessionId })}\n\n`)
+    // Send initial keepalive comment
+    res.write(': keepalive\n\n')
 
     console.log('Initializing MCP proxy with config:', {
       baseUrl,
