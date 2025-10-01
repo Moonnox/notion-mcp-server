@@ -130,41 +130,22 @@ app.post('/mcp', async (req, res) => {
       })
     } 
     else if (method === 'tools/list') {
-      // Access the internal request handlers directly
-      const handlers = (server as any)._requestHandlers
-      const listToolsHandler = handlers?.get(ListToolsRequestSchema)
-      
-      if (listToolsHandler) {
-        const result = await listToolsHandler({})
-        return res.json({
-          jsonrpc: '2.0',
-          result,
-          id: requestId
-        })
-      } else {
-        throw new Error('tools/list handler not found')
-      }
+      // Call the proxy's listTools method directly
+      const result = await proxy.listTools()
+      return res.json({
+        jsonrpc: '2.0',
+        result,
+        id: requestId
+      })
     }
     else if (method === 'tools/call') {
-      // Access the internal request handlers directly
-      const handlers = (server as any)._requestHandlers
-      const callToolHandler = handlers?.get(CallToolRequestSchema)
-      
-      if (callToolHandler) {
-        const result = await callToolHandler({
-          params: {
-            name: params.name,
-            arguments: params.arguments || {}
-          }
-        })
-        return res.json({
-          jsonrpc: '2.0',
-          result,
-          id: requestId
-        })
-      } else {
-        throw new Error('tools/call handler not found')
-      }
+      // Call the proxy's callTool method directly
+      const result = await proxy.callTool(params.name, params.arguments || {})
+      return res.json({
+        jsonrpc: '2.0',
+        result,
+        id: requestId
+      })
     }
     else {
       // Method not found
