@@ -438,8 +438,13 @@ export class OpenAPIToMCPConverter {
         .map(([code, response]) => {
           const responseObj = this.resolveResponse(response)
           let errorDesc = responseObj?.description || ''
+          // Skip if description is empty or just repeats the status code
+          if (!errorDesc || errorDesc === code) {
+            return null
+          }
           return `${code}: ${errorDesc}`
         })
+        .filter((item): item is string => item !== null)
 
       if (errorResponses.length > 0) {
         description += '\nError Responses:\n' + errorResponses.join('\n')
