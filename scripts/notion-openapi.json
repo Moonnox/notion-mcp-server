@@ -32,7 +32,7 @@
     "/v1/users/{user_id}": {
       "get": {
         "summary": "Retrieve a user",
-        "description": "",
+        "description": "Fetches information about a specific Notion user by their ID. Returns user details including name, avatar URL, email (for person type), and user type (person or bot). Use this to get information about workspace members or bots.",
         "operationId": "get-user",
         "parameters": [
           {
@@ -82,6 +82,7 @@
     "/v1/users": {
       "get": {
         "summary": "List all users",
+        "description": "Returns a paginated list of all users in the Notion workspace. Use this to discover workspace members and bots. Supports pagination with start_cursor and page_size parameters.",
         "operationId": "get-users",
         "parameters": [
           {
@@ -126,7 +127,7 @@
     "/v1/users/me": {
       "get": {
         "summary": "Retrieve your token's bot user",
-        "description": "",
+        "description": "Returns information about the bot user associated with the current API token. Use this to identify which bot is making API calls and get its details.",
         "operationId": "get-self",
         "parameters": [],
         "responses": {
@@ -217,7 +218,7 @@
     "/v1/databases/{database_id}/query": {
       "post": {
         "summary": "Query a database",
-        "description": "",
+        "description": "Queries a Notion database and returns pages that match the specified filters and sorts. Use this to search for specific database entries based on property values. Supports complex filtering, sorting, and pagination. Essential for retrieving structured data from Notion databases.",
         "operationId": "post-database-query",
         "parameters": [
           {
@@ -846,7 +847,7 @@
     "/v1/search": {
       "post": {
         "summary": "Search by title",
-        "description": "",
+        "description": "Searches all pages and databases that the integration has access to by title. Use this to find pages or databases when you know part or all of their title. Supports filtering by object type (page or database) and pagination. Great for discovering content across the workspace.",
         "operationId": "post-search",
         "parameters": [],
         "requestBody": {
@@ -910,7 +911,7 @@
     "/v1/blocks/{block_id}/children": {
       "get": {
         "summary": "Retrieve block children",
-        "description": "",
+        "description": "Returns a paginated list of all child blocks within a parent block or page. Use this to read the content and structure of a Notion page, including paragraphs, headings, lists, images, and other block types. Essential for reading page content.",
         "operationId": "get-block-children",
         "parameters": [
           {
@@ -947,7 +948,7 @@
       },
       "patch": {
         "summary": "Append block children",
-        "description": "",
+        "description": "Appends new child blocks to a parent block or page. Use this to add content like paragraphs, headings, lists, images, code blocks, and more to existing pages. This is the primary way to write or add content to Notion pages.",
         "operationId": "patch-block-children",
         "parameters": [
           {
@@ -1111,7 +1112,7 @@
     "/v1/blocks/{block_id}": {
       "get": {
         "summary": "Retrieve a block",
-        "description": "",
+        "description": "Fetches detailed information about a specific block by its ID. Use this to get the content, type, and properties of any block in Notion (paragraphs, headings, images, etc.). Returns the full block object with all its data.",
         "operationId": "retrieve-a-block",
         "parameters": [
           {
@@ -1130,7 +1131,7 @@
       },
       "patch": {
         "summary": "Update a block",
-        "description": "",
+        "description": "Updates the content or properties of an existing block. Use this to modify text content, change block properties, or update block-specific settings. Works with various block types including paragraphs, headings, to-do items, and more.",
         "operationId": "update-a-block",
         "parameters": [
           {
@@ -1170,7 +1171,7 @@
       },
       "delete": {
         "summary": "Delete a block",
-        "description": "",
+        "description": "Permanently removes a block from a Notion page. Use this to delete any type of content block including paragraphs, headings, lists, images, or other block types. The block and all its children will be deleted.",
         "operationId": "delete-a-block",
         "parameters": [
           {
@@ -1191,7 +1192,7 @@
     "/v1/pages/{page_id}": {
       "get": {
         "summary": "Retrieve a page",
-        "description": "",
+        "description": "Fetches detailed information about a Notion page including its properties, cover image, icon, and metadata. Use this to get page title, properties, and other page-level information. Does not return page content blocks (use get-block-children for that).",
         "operationId": "retrieve-a-page",
         "parameters": [
           {
@@ -1218,7 +1219,7 @@
       },
       "patch": {
         "summary": "Update page properties",
-        "description": "",
+        "description": "Updates the properties of an existing Notion page. Use this to modify page properties like title, status, select fields, dates, checkboxes, and other database properties. Can also update page icon, cover, and archive status.",
         "operationId": "patch-page",
         "parameters": [
           {
@@ -1360,7 +1361,7 @@
     "/v1/pages": {
       "post": {
         "summary": "Create a page",
-        "description": "",
+        "description": "Creates a new page in Notion, either as a child of another page or as an entry in a database. Use this to create new pages with properties, content blocks, icons, and covers. When creating in a database, you can set all property values.",
         "operationId": "post-page",
         "parameters": [],
         "requestBody": {
@@ -1453,7 +1454,7 @@
     "/v1/databases": {
       "post": {
         "summary": "Create a database",
-        "description": "",
+        "description": "Creates a new database in Notion as a child of a page. Use this to set up new databases with custom properties (text, number, select, date, etc.), title, description, and icon. Define the database schema including all property types and configurations.",
         "operationId": "create-a-database",
         "parameters": [],
         "requestBody": {
@@ -1583,7 +1584,7 @@
     "/v1/databases/{database_id}": {
       "patch": {
         "summary": "Update a database",
-        "description": "",
+        "description": "Updates the schema, title, description, or properties of an existing database. Use this to add, modify, or remove database properties, change property types, update select options, or modify database metadata like title and icon.",
         "operationId": "update-a-database",
         "parameters": [
           {
@@ -1714,7 +1715,7 @@
       },
       "get": {
         "summary": "Retrieve a database",
-        "description": "",
+        "description": "Fetches complete information about a Notion database including its schema, properties, title, description, and metadata. Use this to understand the database structure and available properties before querying or creating pages in it.",
         "operationId": "retrieve-a-database",
         "parameters": [
           {
@@ -1748,7 +1749,7 @@
     "/v1/pages/{page_id}/properties/{property_id}": {
       "get": {
         "summary": "Retrieve a page property item",
-        "description": "",
+        "description": "Fetches the value of a specific property from a page. Use this to get individual property values, especially useful for paginated properties like rollups or relations. Returns the property value with full details.",
         "operationId": "retrieve-a-page-property",
         "parameters": [
           {
@@ -1814,7 +1815,7 @@
     "/v1/comments": {
       "get": {
         "summary": "Retrieve comments",
-        "description": "Retrieves a list of un-resolved [Comment objects](ref:comment-object) from a page or block.",
+        "description": "Retrieves a paginated list of unresolved comments from a page or block. Use this to read discussion threads and comments on Notion pages. Returns comment text, author, timestamps, and discussion IDs.",
         "operationId": "retrieve-a-comment",
         "parameters": [
           {
@@ -1863,7 +1864,7 @@
       },
       "post": {
         "summary": "Create comment",
-        "description": "Creates a comment in a page or existing discussion thread.",
+        "description": "Creates a new comment on a page or adds a reply to an existing discussion thread. Use this to add comments, notes, or replies to Notion pages. Requires either a page_id to start a new discussion or a discussion_id to reply to an existing thread.",
         "operationId": "create-a-comment",
         "requestBody": {
           "content": {
