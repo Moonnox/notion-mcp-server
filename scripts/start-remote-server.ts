@@ -146,8 +146,10 @@ async function handleSSEConnection(req: Request, res: Response) {
       'X-Session-ID': sessionId
     })
 
-    // Send initial keepalive comment
-    res.write(': keepalive\n\n')
+    // Send endpoint info as a custom event so the client knows where to POST
+    const endpointUrl = `/messages?sessionId=${sessionId}`
+    res.write(`event: mcp-endpoint\n`)
+    res.write(`data: ${endpointUrl}\n\n`)
 
     console.log('Initializing MCP proxy with config:', {
       baseUrl,
