@@ -1,9 +1,9 @@
 import express, { Request, Response } from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'url'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { initProxyWithConfig } from '../src/init-server.js'
+import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
+import { initProxyWithConfig } from '../src/init-server.js'
 
 const filename = fileURLToPath(import.meta.url)
 const directory = path.dirname(filename)
@@ -12,10 +12,85 @@ const specPath = path.resolve(directory, '../scripts/notion-openapi.json')
 const app = express()
 const port = process.env.PORT || 3000
 
+// Custom SSE Transport implementation
+class SSETransport implements Transport {
+  private response: Response
+  private messageHandler?: (message: JSONRPCMessage) => Promise<void>
+  private errorHandler?: (error: Error) => void
+  private closeHandler?: () => void
+
+  constructor(response: Response) {
+    this.response = response
+  }
+
+  async start(): Promise<void> {
+    // Transport is ready when SSE connection is established
+    console.log('SSE Transport started')
+  }
+
+  async send(message: JSONRPCMessage): Promise<void> {
+    console.log('SSE Transport sending:', JSON.stringify(message))
+    this.response.write(`data: ${JSON.stringify(message)}\n\n`)
+  }
+
+  async close(): Promise<void> {
+    console.log('SSE Transport closing')
+    this.response.end()
+    if (this.closeHandler) {
+      this.closeHandler()
+    }
+  }
+
+  onmessage?: (message: JSONRPCMessage) => void = (message: JSONRPCMessage) => {
+    if (this.messageHandler) {
+      this.messageHandler(message).catch(err => {
+        console.error('Error in message handler:', err)
+        if (this.errorHandler) {
+          this.errorHandler(err)
+        }
+      })
+    }
+  }
+
+  onerror?: (error: Error) => void = (error: Error) => {
+    if (this.errorHandler) {
+      this.errorHandler(error)
+    }
+  }
+
+  onclose?: () => void = () => {
+    if (this.closeHandler) {
+      this.closeHandler()
+    }
+  }
+  
+  setMessageHandler(handler: (message: JSONRPCMessage) => Promise<void>): void {
+    this.messageHandler = handler
+  }
+  
+  setErrorHandler(handler: (error: Error) => void): void {
+    this.errorHandler = handler
+  }
+  
+  setCloseHandler(handler: () => void): void {
+    this.closeHandler = handler
+  }
+
+  // Custom method to inject messages from POST endpoint
+  async receiveMessage(message: JSONRPCMessage): Promise<void> {
+    console.log('SSE Transport receiving:', JSON.stringify(message))
+    if (this.messageHandler) {
+      await this.messageHandler(message)
+    } else {
+      console.error('No message handler registered!')
+    }
+  }
+}
+
 interface MCPSession {
   id: string
-  response: Response
-  sendMessage: (message: JSONRPCMessage) => void
+  transport: SSETransport
+  notionApiKey: string
 }
 
 const sessions = new Map<string, MCPSession>()
@@ -71,18 +146,9 @@ async function handleSSEConnection(req: Request, res: Response) {
       'X-Session-ID': sessionId
     })
 
-    // Send initial comment to establish connection
-    res.write(': mcp-session-start\n\n')
-
-    // Function to send messages via SSE
-    const sendMessage = (message: JSONRPCMessage) => {
-      console.log(`Sending SSE message for session ${sessionId}:`, JSON.stringify(message))
-      res.write(`data: ${JSON.stringify(message)}\n\n`)
-    }
-
-    // Store session
-    const session: MCPSession = { id: sessionId, response: res, sendMessage }
-    sessions.set(sessionId, session)
+    // Send endpoint info as first event so client knows where to POST
+    res.write(`event: endpoint\n`)
+    res.write(`data: ${JSON.stringify({ url: '/messages', sessionId })}\n\n`)
 
     console.log('Initializing MCP proxy with config:', {
       baseUrl,
@@ -98,21 +164,14 @@ async function handleSSEConnection(req: Request, res: Response) {
       notionApiVersion
     })
 
-    // Create a custom transport that bridges our SSE implementation with the MCP server
-    // We'll use stdio transport but override its message sending
-    const transport = new StdioServerTransport()
+    // Create custom SSE transport
+    const transport = new SSETransport(res)
     
-    // Override the send method to use SSE instead of stdio
-    const originalSend = transport.send.bind(transport)
-    transport.send = async (message: JSONRPCMessage) => {
-      sendMessage(message)
-    }
+    // Store session
+    sessions.set(sessionId, { id: sessionId, transport, notionApiKey })
 
-    console.log(`Connecting proxy to custom transport for session ${sessionId}`)
+    console.log(`Connecting proxy to SSE transport for session ${sessionId}`)
     await proxy.connect(transport)
-    
-    // Store the transport for receiving messages
-    ;(session as any).transport = transport
     
     console.log(`MCP connection established successfully for session ${sessionId}`)
 
@@ -181,30 +240,24 @@ app.post('/messages', async (req: Request, res: Response) => {
   }
 
   try {
-    const transport = (session as any).transport as StdioServerTransport
-    
     // Send the message to the transport for processing
-    // We need to simulate receiving it via stdin
-    if (transport && typeof (transport as any).handleMessage === 'function') {
-      console.log(`Forwarding message to transport for session ${sessionId}`)
-      await (transport as any).handleMessage(req.body)
-    } else {
-      console.error('Transport does not have handleMessage method')
-      // The response will be sent via SSE, just acknowledge receipt via HTTP
-    }
+    console.log(`Forwarding message to transport for session ${sessionId}`)
+    await session.transport.receiveMessage(req.body)
     
     // Acknowledge receipt (actual response goes via SSE)
     res.status(202).end()
   } catch (error) {
     console.error(`Error processing message for session ${sessionId}:`, error)
-    res.status(500).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32603,
-        message: error instanceof Error ? error.message : 'Internal error'
-      },
-      id: req.body.id || null
-    })
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : 'Internal error'
+        },
+        id: req.body.id || null
+      })
+    }
   }
 })
 
