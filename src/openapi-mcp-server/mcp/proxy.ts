@@ -70,7 +70,7 @@ export class MCPProxy {
       // Add methods as separate tools to match the MCP format
       Object.entries(this.tools).forEach(([toolName, def]) => {
         def.methods.forEach(method => {
-          const toolNameWithMethod = `${toolName}-${method.name}`;
+          const toolNameWithMethod = toolName ? `${toolName}-${method.name}` : method.name;
           const truncatedToolName = this.truncateToolName(toolNameWithMethod);
           tools.push({
             name: truncatedToolName,
