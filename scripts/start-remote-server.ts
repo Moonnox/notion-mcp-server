@@ -4,7 +4,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'url'
 import { initProxyWithConfig } from '../src/init-server.js'
 import type { MCPProxy } from '../src/openapi-mcp-server/mcp/proxy.js'
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
 const filename = fileURLToPath(import.meta.url)
 const directory = path.dirname(filename)
@@ -177,17 +176,9 @@ app.get('/tools', async (req, res) => {
     // Use a placeholder API key for listing tools (doesn't execute, just lists)
     const notionApiKey = req.query.notionApiKey as string || 'placeholder'
     const proxy = await getOrCreateServer(notionApiKey, 'https://api.notion.com', '2022-06-28')
-    const server = proxy.getServer()
-
-    const handlers = (server as any)._requestHandlers
-    const listToolsHandler = handlers?.get(ListToolsRequestSchema)
     
-    if (listToolsHandler) {
-      const result = await listToolsHandler({})
-      return res.json(result)
-    } else {
-      throw new Error('tools/list handler not found')
-    }
+    const result = await proxy.listTools()
+    return res.json(result)
   } catch (error) {
     console.error('Error listing tools:', error)
     return res.status(500).json({
