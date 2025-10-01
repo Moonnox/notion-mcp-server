@@ -181,7 +181,7 @@ export class MCPProxy {
     const tools: Tool[] = []
     Object.entries(this.tools).forEach(([toolName, def]) => {
       def.methods.forEach(method => {
-        const toolNameWithMethod = `${toolName}-${method.name}`
+        const toolNameWithMethod = toolName ? `${toolName}-${method.name}` : method.name
         const truncatedToolName = this.truncateToolName(toolNameWithMethod)
         tools.push({
           name: truncatedToolName,
