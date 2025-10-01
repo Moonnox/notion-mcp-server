@@ -328,8 +328,8 @@ export class OpenAPIToMCPConverter {
       return param
     } else {
       const resolved = this.internalResolveRef(param.$ref, new Set())
-      if (resolved && (resolved as OpenAPIV3.ParameterObject).name) {
-        return resolved as OpenAPIV3.ParameterObject
+      if (resolved && (resolved as unknown as OpenAPIV3.ParameterObject).name) {
+        return resolved as unknown as OpenAPIV3.ParameterObject
       }
     }
     return null
@@ -341,7 +341,7 @@ export class OpenAPIToMCPConverter {
     } else {
       const resolved = this.internalResolveRef(body.$ref, new Set())
       if (resolved) {
-        return resolved as OpenAPIV3.RequestBodyObject
+        return resolved as unknown as OpenAPIV3.RequestBodyObject
       }
     }
     return null
