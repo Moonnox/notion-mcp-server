@@ -31,12 +31,12 @@ app.use((req, res, next) => {
 app.use(express.json())
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() })
 })
 
 // Root endpoint with server information
-app.get('/', (req: Request, res: Response) => {
+app.get('/', (req, res) => {
   res.json({
     service: 'Notion MCP Server',
     version: '1.8.1',
@@ -78,7 +78,7 @@ async function getOrCreateServer(
 }
 
 // Main MCP endpoint - handles all JSON-RPC requests
-app.post('/mcp', async (req: Request, res: Response) => {
+app.post('/mcp', async (req, res) => {
   try {
     const body = req.body
     console.log('Received MCP request:', JSON.stringify(body, null, 2))
@@ -191,7 +191,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
 })
 
 // List available tools endpoint  
-app.get('/tools', async (req: Request, res: Response) => {
+app.get('/tools', async (req, res) => {
   try {
     // Use a placeholder API key for listing tools (doesn't execute, just lists)
     const notionApiKey = req.query.notionApiKey as string || 'placeholder'
